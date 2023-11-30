@@ -4,17 +4,14 @@ FROM python:3.8-alpine
 
 RUN apk add --no-cache --virtual .build-deps \
     gcc \
-    musl-dev \
-    libffi-dev \
-    openssl-dev \
+    musl-dev\
     python3-dev \
-    cargo \
-    && pip install pipenv \
-    && apk del .build-deps
+    && pip install pipenv
 
-    
-WORKDIR /code
+
+WORKDIR /code/
 
 ADD Pipfile* /code/
 RUN pipenv sync
+ADD . /code/
 CMD ["pipenv", "run", "python", "handler.py"]

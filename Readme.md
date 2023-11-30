@@ -2,7 +2,7 @@
 
 Want to use deployed version?
 
-Create a new channel in telegram for your checklists and invite https://t.me/tobedo_bot there.
+Create a new group in telegram for your checklists and invite https://t.me/tobedo_bot there.
 The bot will automatically turn any messages into a checklist
 
 # Deployment of own bot
@@ -11,7 +11,7 @@ The bot will automatically turn any messages into a checklist
 2) Deploy tobedo docker file to some server and pass environment variable TG_TOKEN:
 
 ```sh
-docker run tobedo -e TG_TOKEN=<your token>
+docker run -e TG_TOKEN=<your token> devforth/tobedo
 ```
 
 Compose example:
@@ -21,7 +21,7 @@ version: '3.3'
 
 services:
   tobedo:
-    image: tobedo
+    image: devforth/tobedo
     environemnt:
       - TG_TOKEN=<your token>
 ```

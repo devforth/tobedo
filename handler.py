@@ -51,32 +51,33 @@ def echo(update: Update, context: CallbackContext) -> None:
     This function would be added to the dispatcher as a handler for messages coming from the Bot API
     """
 
-    msg = update.channel_post.text
+    print('upd 🟨', update)
+    if not update.channel_post and not update.message.text:
+        return
+    
+    msg = update.channel_post.text if update.channel_post else update.message.text
     print('msg', msg)
     # Print to console
 
-    if update.channel_post and update.channel_post.text:
-        lines = msg.split('\n')
-        keyboard = []
+    lines = msg.split('\n')
+    keyboard = []
 
-        index = 0
-        for line in lines:
-            if line.strip() == '':
-                continue
-            keyboard.append([InlineKeyboardButton(
-                f"🟨 {line}", 
-                callback_data=f"toggle__{md5hash(f'{line}_{index}')}"
-            )])
-            index += 1
+    index = 0
+    for line in lines:
+        if line.strip() == '':
+            continue
+        keyboard.append([InlineKeyboardButton(
+            f"🟨 {line}", 
+            callback_data=f"toggle__{md5hash(f'{line}_{index}')}"
+        )])
+        index += 1
 
 
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if update.channel_post:
         update.channel_post.reply_text('Click to toggle', reply_markup=reply_markup)
-
     else:
-        pass
-        # This is equivalent to forwarding, without the sender's name
-        # update.message.copy(update.message.chat_id)
+        update.message.reply_text('Click to toggle', reply_markup=reply_markup)
 
 
 
