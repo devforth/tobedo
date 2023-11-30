@@ -2,8 +2,9 @@
 
 Want to use deployed version?
 
-Create a new group in telegram for your checklists and invite https://t.me/tobedo_bot there.
-The bot will automatically turn any messages into a checklist
+1) Create a new group (or channel) in telegram for your checklists and invite https://t.me/tobedo_bot there.
+2) Make tobedo_bot a group admin so he can read the messages
+3) The bot will automatically turn any messages into a checklist parsing line by line
 
 # Deployment of own bot
 
