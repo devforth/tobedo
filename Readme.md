@@ -12,13 +12,13 @@ Want to use deployed version?
 2) Deploy tobedo docker file to some server and pass environment variable TG_TOKEN returned by BotFather. Also mount /code/db.sqlite3 to some persistent storage
 
 ```sh
-docker run -e TG_TOKEN=<your token> -v /volumes/tobedo.sqlite3:/code/tobedo.sqlite3 devforth/tobedo
+docker run -e TG_TOKEN=<your token> -v /volumes/tobedo/:/code/db/ devforth/tobedo
 ```
 
 Compose example:
 
 ```yaml
-version: '3.3'
+version: '3.3' 
 
 services:
   tobedo:

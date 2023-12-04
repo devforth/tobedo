@@ -10,7 +10,10 @@ import os
 import sqlite3
 import asyncio
 
-DB_NAME = 'tobedo.sqlite3'
+DB_NAME = './db/tobedo.sqlite3'
+
+CHECK_CHAR = '☑️'
+UNCHECK_CHAR = '🟨'
 
 def gen_db():
     # table: Replies
@@ -20,30 +23,54 @@ def gen_db():
         db.execute('''
             CREATE TABLE IF NOT EXISTS Replies (
                 message_and_chat_id VARCHAR(255) NOT NULL,
-                reply_id VARCHAR(255) NOT NULL,
+                reply_and_chat_id VARCHAR(255) NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (message_and_chat_id)
+                state TEXT,
+                PRIMARY KEY (message_and_chat_id),
+                UNIQUE (reply_and_chat_id)
             )
         ''')
 
         db.commit()
 
-def get_reply_by_message_id(message_id, chat_id):
+def cleanup_old_replies():
+    # delete posts older then 1 year
+    with sqlite3.connect(DB_NAME) as db:
+        db.execute('''
+            DELETE FROM Replies WHERE created_at < datetime('now', '-1 year')
+        ''')
+
+        db.commit()
+
+def get_reply_by_message_id(message_id, chat_id) -> tuple:
     with sqlite3.connect(DB_NAME) as db:
         cursor = db.execute('''
-            SELECT reply_id FROM Replies WHERE message_and_chat_id = ?
+            SELECT reply_and_chat_id, state FROM Replies WHERE message_and_chat_id = ?
         ''', (f"{chat_id}_{message_id}",))
 
         row = cursor.fetchone()
-        if row:
-            return row[0]
-        return None
+        if not row:
+            return None, None
+        return row[0], json.loads(row[1]) if row[1] else {}
+        
 
 def insert_reply(message_id, reply_id, chat_id):
     with sqlite3.connect(DB_NAME) as db:
+        db.execute(
+            '''
+            INSERT INTO Replies (message_and_chat_id, reply_and_chat_id, state) VALUES (?, ?, ?)
+            ''', 
+            (f"{chat_id}_{message_id}", f"{chat_id}_{reply_id}", "{}")
+        )
+
+        db.commit()
+
+def update_reply(reply_id, chat_id, state: dict):
+    with sqlite3.connect(DB_NAME) as db:
         db.execute('''
-            INSERT INTO Replies (message_and_chat_id, reply_id) VALUES (?, ?)
-        ''', (f"{chat_id}_{message_id}", reply_id))
+            UPDATE Replies SET state = ? WHERE reply_and_chat_id = ?
+        ''', 
+        (json.dumps(state), f"{chat_id}_{reply_id}"))
 
         db.commit()
 
@@ -60,18 +87,27 @@ def button_click(update, context):
     query = update.callback_query
 
     if query.data.startswith('toggle__'):
-        hash = query.data.replace('toggle__', '')
+        index = query.data.replace('toggle__', '')
 
         for i, btn in enumerate(query.message.reply_markup.inline_keyboard):
-            checked = btn[0].text.startswith('☑️')
-            btn_text = btn[0].text.replace('🟨 ', '').replace('☑️ ', '')
-            if md5hash(
-                f'{btn_text}_{i}'
-            ) == hash:
+            checked = btn[0].text.startswith(CHECK_CHAR)
+            btn_text = btn[0].text.replace(f'{UNCHECK_CHAR} ', '').replace(f'{CHECK_CHAR} ', '')
+            if i == int(index):
                 print('found a btn', btn_text)
-                new_text = f'☑️ {btn_text}' if not checked else f'🟨 {btn_text}'
+                new_text = f'{CHECK_CHAR} {btn_text}' if not checked else f'{UNCHECK_CHAR} {btn_text}'
                 btn[0].text = new_text
                 break
+        
+        state = {}
+        for btn in query.message.reply_markup.inline_keyboard:
+            checked = btn[0].text.startswith(CHECK_CHAR)
+            btn_text = btn[0].text.replace(f'{UNCHECK_CHAR} ', '').replace(f'{CHECK_CHAR} ', '')
+            state[btn_text] = checked
+        
+        print('setting state', state)
+        reply_id = query.message.message_id
+        update_reply(reply_id, query.message.chat_id, state)
+
 
         context.bot.edit_message_text(
             chat_id=query.message.chat_id,
@@ -92,8 +128,6 @@ def echo(update: Update, context: CallbackContext) -> None:
     This function would be added to the dispatcher as a handler for messages coming from the Bot API
     """
 
-    print('upd 🟨', update)
-    
     msg = None
     update_object = None
 
@@ -110,30 +144,42 @@ def echo(update: Update, context: CallbackContext) -> None:
     elif update.edited_channel_post:
         msg = update.edited_channel_post.text
         update_object = update.edited_channel_post
-
+    
     if not msg:
         print('Unrecognized update')
         return
     
-    print('msg', msg)
-    # Print to console
+    is_update = update.edited_message or update.edited_channel_post
+    previous_state = {}
+    if is_update:
+        message_id = update_object.message_id
+        reply_id_with_message_id, previous_state = get_reply_by_message_id(message_id, update_object.chat_id)
+        if not reply_id_with_message_id:
+            print(f'reply_id for message_id {message_id} and chat_id {update_object.chat_id} not found')
+            return
+        
 
     lines = msg.split('\n')
     keyboard = []
 
     index = 0
     for line in lines:
-        if line.strip() == '':
+        line_strip = line.strip()
+        if line_strip == '':
             continue
+        
+        print('previous_state', previous_state)
+
         keyboard.append([InlineKeyboardButton(
-            f"🟨 {line}", 
-            callback_data=f"toggle__{md5hash(f'{line}_{index}')}"
+            f"{CHECK_CHAR if previous_state.get(line_strip, False) else UNCHECK_CHAR} {line_strip}", 
+            callback_data=f"toggle__{index}"
         )])
         index += 1
 
-
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.channel_post or update.message:
+
+    if not is_update:
+        # add new reply
         reply = update_object.reply_text('Click to toggle', reply_markup=reply_markup)
         reply_id = reply.message_id
         message_id = update_object.message_id
@@ -141,12 +187,11 @@ def echo(update: Update, context: CallbackContext) -> None:
         insert_reply(message_id, reply_id, chat_id)
 
     else:
+
         # find previous reply to same message and edit it
         # this is a workaround for editing messages in channels
         #
-        print('context', context)
-        message_id = update_object.message_id
-        reply_id = get_reply_by_message_id(message_id, update_object.chat_id)
+        reply_id = reply_id_with_message_id.split('_')[1]
         context.bot.edit_message_reply_markup(
             chat_id=update_object.chat_id,
             message_id=reply_id,
@@ -158,6 +203,7 @@ def echo(update: Update, context: CallbackContext) -> None:
 
 def main() -> None:
     gen_db()
+    cleanup_old_replies()
     updater = Updater(TOKEN)
 
     # Get the dispatcher to register handlers
