@@ -9,10 +9,10 @@ Want to use deployed version?
 # Deployment of own bot
 
 1) Go to https://telegram.me/BotFather and add a new bot. Remember bot username, and API token
-2) Deploy tobedo docker file to some server and pass environment variable TG_TOKEN:
+2) Deploy tobedo docker file to some server and pass environment variable TG_TOKEN returned by BotFather. Also mount /code/db.sqlite3 to some persistent storage
 
 ```sh
-docker run -e TG_TOKEN=<your token> devforth/tobedo
+docker run -e TG_TOKEN=<your token> -v /volumes/tobedo.sqlite3:/code/tobedo.sqlite3 devforth/tobedo
 ```
 
 Compose example:
@@ -25,4 +25,6 @@ services:
     image: devforth/tobedo
     environemnt:
       - TG_TOKEN=<your token>
+    volumes:
+      - /volumes/tobedo.sqlite3:/code/tobedo.sqlite3
 ```

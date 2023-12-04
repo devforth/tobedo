@@ -7,6 +7,47 @@ from telegram.ext import Updater, MessageHandler, Filters, CallbackContext, Call
 import json
 import hashlib
 import os
+import sqlite3
+import asyncio
+
+DB_NAME = 'tobedo.sqlite3'
+
+def gen_db():
+    # table: Replies
+    # message_and_chat_id, reply_id, created_at
+    # unique index on message_id
+    with sqlite3.connect(DB_NAME) as db:
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS Replies (
+                message_and_chat_id VARCHAR(255) NOT NULL,
+                reply_id VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (message_and_chat_id)
+            )
+        ''')
+
+        db.commit()
+
+def get_reply_by_message_id(message_id, chat_id):
+    with sqlite3.connect(DB_NAME) as db:
+        cursor = db.execute('''
+            SELECT reply_id FROM Replies WHERE message_and_chat_id = ?
+        ''', (f"{chat_id}_{message_id}",))
+
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        return None
+
+def insert_reply(message_id, reply_id, chat_id):
+    with sqlite3.connect(DB_NAME) as db:
+        db.execute('''
+            INSERT INTO Replies (message_and_chat_id, reply_id) VALUES (?, ?)
+        ''', (f"{chat_id}_{message_id}", reply_id))
+
+        db.commit()
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +93,28 @@ def echo(update: Update, context: CallbackContext) -> None:
     """
 
     print('upd 🟨', update)
-    if not update.channel_post and not update.message.text:
+    
+    msg = None
+    update_object = None
+
+    if update.channel_post:
+        msg = update.channel_post.text
+        update_object = update.channel_post
+    elif update.message:
+        msg = update.message.text
+        update_object = update.message
+    elif update.edited_message:
+        msg = update.edited_message.text
+        update_object = update.edited_message
+
+    elif update.edited_channel_post:
+        msg = update.edited_channel_post.text
+        update_object = update.edited_channel_post
+
+    if not msg:
+        print('Unrecognized update')
         return
     
-    msg = update.channel_post.text if update.channel_post else update.message.text
     print('msg', msg)
     # Print to console
 
@@ -74,14 +133,31 @@ def echo(update: Update, context: CallbackContext) -> None:
 
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.channel_post:
-        update.channel_post.reply_text('Click to toggle', reply_markup=reply_markup)
+    if update.channel_post or update.message:
+        reply = update_object.reply_text('Click to toggle', reply_markup=reply_markup)
+        reply_id = reply.message_id
+        message_id = update_object.message_id
+        chat_id = update_object.chat_id
+        insert_reply(message_id, reply_id, chat_id)
+
     else:
-        update.message.reply_text('Click to toggle', reply_markup=reply_markup)
+        # find previous reply to same message and edit it
+        # this is a workaround for editing messages in channels
+        #
+        print('context', context)
+        message_id = update_object.message_id
+        reply_id = get_reply_by_message_id(message_id, update_object.chat_id)
+        context.bot.edit_message_reply_markup(
+            chat_id=update_object.chat_id,
+            message_id=reply_id,
+            reply_markup=reply_markup
+        )
+        
 
 
 
 def main() -> None:
+    gen_db()
     updater = Updater(TOKEN)
 
     # Get the dispatcher to register handlers
