@@ -12,8 +12,8 @@ import asyncio
 
 DB_NAME = './db/tobedo.sqlite3'
 
-CHECK_CHAR = '☑️'
-UNCHECK_CHAR = '🟨'
+CHECK_CHAR = '✅'
+UNCHECK_CHAR = '⬜'
 
 def gen_db():
     # table: Replies
@@ -88,6 +88,10 @@ def button_click(update, context):
 
     if query.data.startswith('toggle__'):
         index = query.data.replace('toggle__', '')
+
+        if not query.message.reply_markup:
+            print(f'no reply_markup for message_id {query.message.message_id} and chat_id {query.message.chat_id}')
+            return
 
         for i, btn in enumerate(query.message.reply_markup.inline_keyboard):
             checked = btn[0].text.startswith(CHECK_CHAR)
