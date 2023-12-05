@@ -1,5 +1,8 @@
 # ToBeDo: Telegram simple checklist bot
 
+![Group 168](https://github.com/devforth/tobedo/assets/1838656/0035b657-0e61-49db-9408-bcfd43c6636d)
+
+
 Want to use deployed version?
 
 1) Create a new group (or channel) in telegram for your checklists and invite https://t.me/tobedo_bot there.
