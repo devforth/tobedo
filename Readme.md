@@ -1,5 +1,7 @@
 # ToBeDo: Telegram simple checklist bot
 
+<a href="https://devforth.io"><img src="./.assets/df_powered_by.svg" style="height:36px"/></a>
+
 
 ![Group 169](https://github.com/devforth/tobedo/assets/1838656/8828eb64-6a5a-43c9-bc4d-29e0b754ab34)
 
