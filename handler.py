@@ -2,13 +2,14 @@
 
 import logging
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Updater, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from telegram.ext import Updater, MessageHandler, CommandHandler, Filters, CallbackContext, CallbackQueryHandler
 import json
 import hashlib
 import os
 import sqlite3
 import asyncio
+import re
 
 DB_NAME = './db/tobedo.sqlite3'
 
@@ -31,7 +32,42 @@ def gen_db():
             )
         ''')
 
+        # store mode for each chat
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS ChatModes (
+                chat_id VARCHAR(255) NOT NULL,
+                mode VARCHAR(255) NOT NULL,
+                PRIMARY KEY (chat_id)
+            )
+        ''')
+
         db.commit()
+
+def set_chat_mode(update, context, mode):
+    if not check_admin(update, context):
+        return
+    chat_id = update.message.chat_id
+    print('setting chat mode', chat_id, mode)
+    with sqlite3.connect(DB_NAME) as db:
+        db.execute('''
+            INSERT OR REPLACE INTO ChatModes (chat_id, mode) VALUES (?, ?)
+        ''', (chat_id, mode))
+
+        db.commit()
+    # reply to user
+    update.message.reply_text(f'Now checklist will appear in reply only to messages starting with "todo" or "td" or "c "' if mode == 'todo' else \
+                               'Now checklist will appear in reply to any message (expect starting with . or !)')
+
+def get_chat_mode(chat_id):
+    with sqlite3.connect(DB_NAME) as db:
+        cursor = db.execute('''
+            SELECT mode FROM ChatModes WHERE chat_id = ?
+        ''', (chat_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return row[0]
 
 def cleanup_old_replies():
     # delete posts older then 1 year
@@ -126,6 +162,8 @@ def md5hash(text):
     return hashlib.md5(text.encode('utf-8')).hexdigest()
 
 
+TODO_MODE_REGEX = re.compile(r'^(todo|tobedo|td|tbd|tobedone|checklist|check |cl |c )\s?', re.IGNORECASE)
+
 
 def echo(update: Update, context: CallbackContext) -> None:
     """
@@ -161,16 +199,30 @@ def echo(update: Update, context: CallbackContext) -> None:
         if not reply_id_with_message_id:
             print(f'reply_id for message_id {message_id} and chat_id {update_object.chat_id} not found')
             return
-        
+    
+    if msg.startswith('/'):
+        return
 
+    mode = get_chat_mode(update_object.chat_id)
+
+    if mode == None or mode == 'all':
+        if msg.startswith('!') or msg.startswith('.'):
+            return
+    else:
+        if re.match(TODO_MODE_REGEX, msg) == None:
+            return
+        msg = re.sub(TODO_MODE_REGEX, '', msg)
+    
     lines = msg.split('\n')
     keyboard = []
 
     index = 0
     for line in lines:
         line_strip = line.strip()
+
         if line_strip == '':
             continue
+
         
         print('previous_state', previous_state)
 
@@ -202,9 +254,21 @@ def echo(update: Update, context: CallbackContext) -> None:
             reply_markup=reply_markup
         )
         
+def check_admin(update, context):
+    now_in_channel = update.message.chat.type == 'channel'
+    now_in_group = update.message.chat.type == 'group'
+    ia_am_admin = update.message.chat.get_member(context.bot.id).status in ['administrator', 'creator']
 
+    if now_in_channel or now_in_group and not ia_am_admin:
+        update.message.reply_text(f'Please promote me to admin in {update.message.chat.type} settings to enable me to generate checklists in replies. I need it because you added me to a {update.message.chat.type}, also you can use me in direct chat without promoting me')
+        return False
+    return True
 
-
+def startBotPrompt(update, context):
+    if check_admin(update, context):
+        update.message.reply_text("""Hello! I am your checklist bot. I will reply to your messages with a checklist. You can click on each item to toggle it.
+You can set the mode to "todo" with /only_todo command to make me reply only to messages starting with "todo" or "td" or "c " """)
+        
 def main() -> None:
     gen_db()
     cleanup_old_replies()
@@ -219,6 +283,21 @@ def main() -> None:
 
     # Echo any message that is not a command
     dispatcher.add_handler(MessageHandler(~Filters.command, echo))
+
+    # add command /setmode
+    # normal, todo, checklist
+    dispatcher.add_handler(CommandHandler('only_todo', lambda up, con: set_chat_mode(up, con, 'todo')))
+
+    dispatcher.add_handler(CommandHandler('all', lambda up, con: set_chat_mode(up, con, 'all')))
+
+    dispatcher.add_handler(CommandHandler('start', startBotPrompt))
+
+    dispatcher.bot.set_my_commands([
+        BotCommand("only_todo", "Set mode to 'todo' messages"),
+        BotCommand("all", "Set mode to any messages"),
+        BotCommand("start", "Start the bot")
+
+    ])
 
     # Start the Bot
     updater.start_polling()
